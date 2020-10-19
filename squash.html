@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<link rel="icon" 
+    type="image/png" 
+    href="icon.png">
+<title>VanessaLeft</title>
+<script src="https://code.jquery.com/jquery-3.5.1.min.js" integrity="sha256-9/aliU8dGd2tb6OSsuzixeV4y/faTqgFtohetphbbj0=" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.14.2/matter.js" integrity="sha512-gYH92QFYJSMUZ5sOAtkAyyShHFf8cipWjMHVWD9f4244kx3xeSn7cUcep4UxaHCKwTKU/Nzq5Lk0EkbuQGkeSg==" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.7/dat.gui.min.js" integrity="sha512-LF8ZB1iTwi4Qvkm4pekHG4a437Y9Af5ZuwbnW4GTbAWQeR2E4KW8WF+xH8b9psevV7wIlDMx1MH9YfPqgKhA/Q==" crossorigin="anonymous"></script>
+<style type="text/css">
+
+body {
+  height: 100%;
+  margin: 0;
+}
+
+#sourceImg {
+	display: none;
+}
+
+#simulation {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+#simulation canvas {
+  background: #FFCC00;
+}
+
+#counter {
+  position: absolute;
+  top: 10px;
+  color: #FFF;
+  left: 10px;
+  font-family: monospace;
+  background: #FFF4;
+  z-index: 100;
+  padding: 5px;
+}
+</style>
+</head>
+<body>
+<img class="dataimg" id="sourceImg" src="head_small.png">
+<div id="simulation">
+  <div id="counter">
+  </div>
+</div>
+<script type="text/javascript">
+	// colors
+const colors = ["f94144","f3722c","f8961e","f9844a","f9c74f","90be6d","43aa8b","4d908e","577590","277da1"];
+
+
+// module aliases
+var Engine = Matter.Engine,
+    Render = Matter.Render,
+    World = Matter.World,
+    Bodies = Matter.Bodies,
+    Events = Matter.Events,
+    Runner = Matter.Runner,
+    Vector = Matter.Vector,
+    Constraint = Matter.Constraint;
+
+function createWorld(props){
+
+	const defaults = {
+		ballSize: 10,
+		ballSpacing: 30,
+		numBalls: 10,
+		springStiffness: 0.5,
+		springDamping: 0.1,
+		showImage: false
+	}
+
+	const filledProps = Object.assign(defaults, props);
+
+	const { ballSize, springStiffness, springDamping, ballSpacing, numBalls, showImage } = filledProps;
+
+	// create an engine
+	var engine = Engine.create();
+
+
+	let stageWidth = $(document).width();
+	let stageHeight = $(document).height();
+	let source = Matter.Vector.create(stageWidth / 2, 0);
+
+	// create a renderer
+	var render = Render.create({
+	    element: $("#simulation").get(0),
+	    engine: engine,
+	    options: {
+	    	width: stageWidth,
+	    	height: stageHeight,
+	      wireframes: false
+	    }
+	});
+
+
+	// create two boxes and a ground
+	const groundProperties = {
+		isStatic: true,
+	  friction: 0.0,
+	  restitution: 0.9,
+	  render: {
+	  	visible: false
+	  }
+	}
+
+	function genStage(stageWidth, stageHeight){
+
+		var ground = Bodies.rectangle(stageWidth / 2, stageHeight + 50, stageWidth, 100, groundProperties);
+		var leftWall = Bodies.rectangle(-25, stageHeight / 2, 50, stageHeight, groundProperties); 
+		var rightWall = Bodies.rectangle(stageWidth + 25, stageHeight / 2, 50, stageHeight, groundProperties);
+		return [ground, leftWall, rightWall];
+	}
+
+	var stage = genStage(stageWidth, stageHeight);
+	World.add(engine.world, stage);
+
+	// add all of the bodies to the world
+
+
+	const balls = [];
+
+	const ballProperties = {
+		density: 1.0,
+	  friction: 0.0,
+	  restitution: 0.5,
+	  };
+
+	const renderProps = {
+	  opacity: 1.0,
+	  lineWidth: 0
+	};
+
+	const runner = Matter.Runner.create();
+
+	function randomColor(){
+	  
+	  let seed = Math.floor(Math.random() * colors.length);
+	  // console.log("#" + colors[seed].hex);
+	  return "#" + colors[seed];
+
+	}
+
+	function spawnBall(x, y, radius){
+		
+	  let area = Math.PI * (radius ** 2);
+	  let mass = ballProperties.density * area;
+	  let force = mass * 0.05;
+	  let interpolatedProperties = {
+	    render: { fillStyle: randomColor(), ...renderProps },
+	    ...ballProperties
+	  };
+	  let newBall = Bodies.circle(x, y, radius, interpolatedProperties);
+	  balls.push(newBall);
+	  World.addBody(engine.world, newBall);
+	  return newBall;
+
+	}
+
+	const constraintProps = {
+		stiffness: springStiffness,
+		damping: springDamping,
+		render: {
+			type: "line",
+			visible: true
+		}
+	} 
+
+	function genConstraint(ballA, ballB){
+
+		let newConstraint = Constraint.create({
+			bodyA: ballA,
+			bodyB: ballB,
+			...constraintProps
+		})
+		World.addConstraint(engine.world, newConstraint);
+
+	}
+
+	// Create the balls
+
+	ballGrid = [];
+
+	for (var i = 0; i < numBalls; i++) {
+
+		let row = [];
+
+		for(let j = 0; j < numBalls; j++){
+			
+			let newBall = spawnBall(100 + ballSpacing * i, 100 + ballSpacing * j, ballSize);
+			row.push(newBall);
+
+		}
+
+		ballGrid.push(row);
+	}
+
+	const constraints = [];
+
+	// Create the springs
+	for (var i = balls.length - 1; i >= 0; i--) {
+		let ix = i % numBalls;
+		let iy = Math.floor(i / numBalls);
+
+		if(iy < numBalls - 1){
+
+			genConstraint(ballGrid[ix][iy], ballGrid[ix][iy + 1]);
+
+		}	
+
+		if(iy < numBalls - 1 && ix < numBalls - 1){
+
+			genConstraint(ballGrid[ix][iy], ballGrid[ix + 1][iy + 1]);
+
+		}
+
+		if(iy < numBalls - 1 && ix > 0){
+
+			genConstraint(ballGrid[ix][iy], ballGrid[ix - 1][iy + 1]);
+
+		}
+
+		if(ix < numBalls - 1){
+
+			genConstraint(ballGrid[ix][iy], ballGrid[ix + 1][iy]);
+
+		}
+
+	}
+
+	 var mouse = Matter.Mouse.create(render.canvas),
+	        mouseConstraint = Matter.MouseConstraint.create(engine, {
+	            mouse: mouse,
+	            constraint: {
+	                stiffness: 0.2,
+	                render: {
+	                    visible: false
+	                }
+	            }
+	        });
+
+	World.add(engine.world, mouseConstraint);
+
+	// run the engine
+	Runner.run(runner, engine);
+
+	// run the renderer
+	Render.run(render);
+
+	if( showImage ){
+		attachImageTiles(ballGrid, render);
+	}
+
+	return {engine: engine, runner: runner, render: render};
+
+}
+
+function clearWorld({engine, render, runner}){
+
+	Render.stop(render);
+	Runner.stop(runner, engine);
+	$(render.canvas).remove();
+
+
+}
+
+function attachImageTiles(ballGrid, render){
+
+	Events.on(render, "afterRender", e => {
+
+		if(!sourceImagePixels){
+			return;
+		}
+
+		bounds = (a, c) => {
+
+			if(!a){
+				return {
+					xmin: c.position.x,
+					xmax: c.position.x,
+					ymin: c.position.y,
+					ymax: c.position.y
+				}
+			}
+
+			return {
+				xmin: Math.min(a.xmin, c.position.x),
+				xmax: Math.max(a.xmax, c.position.x),
+				ymin: Math.min(a.ymin, c.position.y),
+				ymax: Math.max(a.ymax, c.position.y),
+				};
+
+		}
+
+		combineBounds = (a, c) => {
+			return {
+				xmin: Math.min(a.xmin, c.xmin),
+				xmax: Math.max(a.xmax, c.xmax),
+				ymin: Math.min(a.ymin, c.ymin),
+				ymax: Math.max(a.ymax, c.ymax),
+
+			}
+		}
+
+		let ballBounds = ballGrid.map(r => r.reduce( bounds, false )).reduce( combineBounds );
+
+		const pixelsPerBall = Math.ceil(sourceImagePixels.width / (ballGrid.length - 1));
+
+		let bbxWidth = Math.round(ballBounds.xmax - ballBounds.xmin);
+		let bbxHeight = Math.round(ballBounds.ymax - ballBounds.ymin);
+
+		var imageData = render.context.createImageData(bbxWidth, bbxHeight);
+
+		for (let i = 0; i < sourceImagePixels.width; i ++) {
+
+			for (let j = 0; j < sourceImagePixels.height; j ++){
+
+				// Translate the point into world coordinates
+
+				// Left and right edge of pixel
+
+				let delta = 1 / pixelsPerBall;
+
+				let i0 = (i % pixelsPerBall) / pixelsPerBall;
+				let i1 = i0 + delta;
+				let j0 = (j % pixelsPerBall) / pixelsPerBall;
+				let j1 = j0 + delta;
+
+				let ib = Math.floor(i / pixelsPerBall);
+				let jb = Math.floor(j / pixelsPerBall);
+
+				let v00, v10, v01, v11;
+
+				try {
+
+					v00 = ballGrid[ib][jb].position;
+					v10 = ballGrid[ib + 1][jb].position;
+					v01 = ballGrid[ib][jb + 1].position;
+					v11 = ballGrid[ib + 1][jb + 1].position;
+				
+				}
+				catch(e) {
+
+					console.log(e);
+					console.log(ib, jb);
+					return;
+
+				}
+
+				let x00 = v00.x + 
+					i0 * (v10.x - v00.x) + 
+					j0 * (v01.x - v00.x) + 
+					i0 * j0 * (v00.x + v11.x - v01.x - v10.x);
+
+				let x10 = x00 + delta * (v10.x - v00.x) + delta * j0 * (v00.x + v11.x - v01.x - v10.x);
+				let x01 = x00 + delta * (v01.x - v00.x) + i0 * delta * (v00.x + v11.x - v01.x - v10.x);
+
+				let x11 = x10 + x01 - x00 + delta ** 2 * (v00.x + v11.x - v01.x - v10.x);
+				let y00 = v00.y + 
+					i0 * (v10.y - v00.y) + 
+					j0 * (v01.y - v00.y) + 
+					i0 * j0 * (v00.y + v11.y - v01.y - v10.y);
+
+				let y10 = y00 + delta * (v10.y - v00.y) + delta * j0 * (v00.y + v11.y - v01.y - v10.y);
+				let y01 = y00 + delta * (v01.y - v00.y) + delta * i0 * (v00.y + v11.y - v01.y - v10.y);
+				let y11 = y10 + y01 - y00 + delta ** 2 * (v00.y + v11.y - v01.y - v10.y);
+
+
+				let xmi = Math.min(x00, x01, x10, x11);
+				let xmx = Math.max(x00, x01, x10, x11);
+
+				let ymi = Math.min(y00, y01, y10, y11);
+				let ymx = Math.max(y00, y01, y10, y11)
+
+				let x00w = Math.floor(xmi - ballBounds.xmin);
+				let x11w = Math.ceil(xmx - ballBounds.xmin); 
+
+				let y00w = Math.floor(ymi - ballBounds.ymin);
+				let y11w = Math.ceil(ymx - ballBounds.ymin);
+
+				let si = 4 * j * sourceImagePixels.width + 4 * i;
+				let [sr, sg, sb] = sourceImagePixels.data.slice(si, si + 3);
+
+				for(let iw = x00w; iw < x11w; iw++){
+
+					for(let jw = y00w; jw < y11w; jw ++){
+
+						let px = (jw * 4 * bbxWidth) + 4 * iw;
+
+						imageData.data[px] = sr;
+						imageData.data[px + 1] = sg;
+						imageData.data[px + 2] = sb;
+						imageData.data[px + 3] = 255;
+
+					}
+				}
+
+			}
+
+		}
+
+		let tempCanvas = new OffscreenCanvas(bbxWidth, bbxHeight);
+		tempCanvas.getContext('2d').putImageData(imageData, 0, 0);
+		render.context.drawImage(tempCanvas, ballBounds.xmin, ballBounds.ymin);
+		
+
+	});
+
+}
+
+/* GLFX Stuff */ 
+
+var sourceImagePixels;
+
+$('#sourceImg').on("load", () => {
+
+	const w = $('#sourceImg').width();
+	const h = $('#sourceImg').height()
+
+	const tempCanvas = new OffscreenCanvas(w, h);
+
+	const ctx = tempCanvas.getContext('2d');
+
+	ctx.drawImage($('#sourceImg').get(0), 0, 0);
+
+	sourceImagePixels = ctx.getImageData(
+		0, 0, w, h
+		);
+
+	console.log(sourceImagePixels);
+
+});
+
+/* Main */ 
+
+const params = {
+	ballSize: 10,
+	springStiffness: 0.5,
+	springDamping: 0.1,
+	showImage: false,
+	numBalls: 5,
+	ballSpacing: 30
+}
+
+let simCollection = createWorld(params);
+
+const gui = new dat.GUI();
+const controllers = [];
+controllers.push( gui.add(params, 'ballSize', 1, 50) );
+controllers.push( gui.add(params, 'ballSpacing', 10, 200, 5) );
+controllers.push( gui.add(params, 'numBalls', 1, 20, 1) );
+controllers.push( gui.add(params, 'springStiffness', 0, 1));
+controllers.push( gui.add(params, 'springDamping', 0, 1));
+controllers.push( gui.add(params, 'showImage'));
+controllers.map(
+	c => {c.onFinishChange(reset)}
+	);
+
+function reset(){
+
+	clearWorld(simCollection);
+	simCollection = createWorld(params);
+
+}
+
+
+$(window).resize(() => {
+
+		reset();
+
+});
+
+
+
+</script>
+</body>
+</html>
